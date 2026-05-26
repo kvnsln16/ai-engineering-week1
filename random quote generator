@@ -1,0 +1,49 @@
+import random  # built-in Python module for generating random values
+ 
+ 
+# list of quotes. Each quote is a dictionary with the text and the author.
+quotes = [
+    {"text": "The only way to do great work is to love what you do.", "author": "Steve Jobs"},
+    {"text": "Life is what happens when you're busy making other plans.", "author": "John Lennon"},
+    {"text": "The future belongs to those who believe in the beauty of their dreams.", "author": "Eleanor Roosevelt"},
+    {"text": "It does not matter how slowly you go as long as you do not stop.", "author": "Confucius"},
+    {"text": "Success is not final, failure is not fatal: it is the courage to continue that counts.", "author": "Winston Churchill"},
+    {"text": "The best way to predict the future is to create it.", "author": "Peter Drucker"},
+    {"text": "Do what you can, with what you have, where you are.", "author": "Theodore Roosevelt"},
+    {"text": "Believe you can and you're halfway there.", "author": "Theodore Roosevelt"},
+    {"text": "In the middle of every difficulty lies opportunity.", "author": "Albert Einstein"},
+    {"text": "What you get by achieving your goals is not as important as what you become by achieving your goals.", "author": "Zig Ziglar"},
+]
+ 
+ 
+def get_random_quote(): # define function which is get random quote
+    """Pick and return one random quote from the list."""
+    return random.choice(quotes) # sends the value back to random choice quotes , random.choice(quotes) - calls the choice function from the random module in quotes list. It return one random item
+ 
+ 
+def display_quote(quote): # will display the random quote
+    """Print a quote in a nicely formatted way."""
+    print("-" * 80) # multiplies the "-" in to 80, for visual/segregation of value output
+    print(f'"{quote["text"]}"') # f formatted string, text - pulls the text in variable named quotes
+    print(f"   — {quote['author']}") # author - pulls the author in variable named quotes
+    print("-" * 80)
+ 
+ 
+def main():
+    """Main program loop. Lets the user keep getting new quotes."""
+    print("Welcome to the Random Quote Generator!\n") # \n new line
+ 
+    while True: # infinite loop
+        quote = get_random_quote() # calls function and stores the dictionary in variable named quotes
+        display_quote(quote) # will print the quote
+ 
+        # Ask the user if they want another quote
+        again = input("\nWant another quote? (y/n): ").strip().lower()
+        if again != "y":
+            print("Goodbye! Stay inspired.")
+            break
+ 
+ 
+# This line makes sure main() only runs when you execute this file directly
+if __name__ == "__main__":
+    main()

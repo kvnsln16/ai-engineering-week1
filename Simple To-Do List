@@ -1,0 +1,130 @@
+import json  # Built-in module for reading/writing JSON (a common data format)
+import os    # Built-in module for interacting with the operating system (e.g. checking if a file exists)
+ 
+ 
+# The name of the file where we'll save tasks
+TASKS_FILE = "tasks.json"
+ 
+ 
+def load_tasks(): # defines a function that takes no inputs and loads saved tasks from disk
+    """Load tasks from the file. Return an empty list if the file doesn't exist."""
+    if not os.path.exists(TASKS_FILE): # returns True if the file exists on disk, False otherwise, not -  flips the os.path.exists(...) reads as "if the file does NOT exist..."
+        return [] # exits the function and gives back an empty list. The first time you run the program, there's no save file, so we start fresh
+    with open(TASKS_FILE, "r") as f: # opens the file in read mode, with - safe way to open files
+        return json.load(f) # reads the JSON text and converts it into Python list of dictionaries
+ 
+ 
+def save_tasks(tasks):
+    """Save the current list of tasks to the file."""
+    with open(TASKS_FILE, "w") as f: # w - write mode
+        json.dump(tasks, f, indent=2) # indent - adds spacing
+ 
+ 
+def show_tasks(tasks):
+    """Print all tasks with their number and status."""
+    if not tasks: # if the list is empty
+        print("\nYour to-do list is empty. Add a task to get started!")
+        return
+ 
+    print("\nYour To-Do List:")
+    print("-" * 40) # print a header followed by a divider. "-" * 40
+    for index, task in enumerate(tasks, start=1): #for - loop goes through each task in the list , enumerate - gives both the position and item on each step, start=1 - makes counting begin at 1 instead of the default 0, so users see "1, 2, 3..." not "0, 1, 2..."
+        status = "[x]" if task["done"] else "[ ]"  # set status to [x] if the task is done, otherwise [ ]
+        print(f"{index}. {status} {task['title']}")
+    print("-" * 40)
+ 
+ 
+def add_task(tasks): 
+    """Ask the user for a new task and add it to the list."""
+    title = input("Enter the new task: ").strip() # shows a prompt and waits for the user to type something, .strip - removes leading/trailing whitespace (in case they accidentally hit space)
+    if title == "": # input validation
+        print("Task cannot be empty.")
+        return
+    tasks.append({"title": title, "done": False})
+    print(f"Added: {title}") #
+ 
+ 
+def complete_task(tasks):
+    """Toggle a task's done status. If it's done, unmark it. If not, mark it as done."""
+    # Check first if there's anything to mark/unmark
+    if not tasks:
+        print("\nNo tasks available to mark. Add a task first!")
+        return
+ 
+    show_tasks(tasks) # show the list first so users can see the numbers, then ask which one to toggle
+    choice = input("Enter the task number to toggle done/undone: ").strip()
+    if not choice.isdigit(): #returns True only if the string contains only digits
+        print("Please enter a valid number.") # if they type letters/words
+        return
+    index = int(choice) - 1 #converts in to 3
+    if index < 0 or index >= len(tasks): #make sure the number is a valid position in the list, index>= len(tasks) catches numbers too big
+        print("That task number doesn't exist.")
+        return
+ 
+    # Flip the done value: True becomes False, False becomes True
+    tasks[index]["done"] = not tasks[index]["done"]
+ 
+    # Show a different message depending on the new state
+    if tasks[index]["done"]:
+        print(f"Marked as done: {tasks[index]['title']}")
+    else:
+        print(f"Unmarked: {tasks[index]['title']}")
+ 
+ 
+def delete_task(tasks):
+    """Remove a task from the list."""
+    # Check first if there's anything to delete at all
+    if not tasks:
+        print("\nNo tasks available to delete. Add a task first!")
+        return
+ 
+    show_tasks(tasks) # almost identical to complete_task up to the last two lines
+    choice = input("Enter the task number to delete: ").strip()
+    if not choice.isdigit():
+        print("Please enter a valid number.")
+        return
+    index = int(choice) - 1
+    if index < 0 or index >= len(tasks):
+        print("That task number doesn't exist.")
+        return
+    removed = tasks.pop(index)
+    print(f"Deleted: {removed['title']}")
+ 
+ 
+def show_menu(): # just prints the options. No parameters, no return value — pure display
+    """Print the menu of options."""
+    print("\nWhat would you like to do?")
+    print("1. View tasks")
+    print("2. Add a task")
+    print("3. Mark/unmark a task as done")
+    print("4. Delete a task")
+    print("5. Quit")
+ 
+ 
+def main(): # print a greeting, then load any previously saved tasks. tasks now holds the full list for the rest of the session
+    """Main program loop."""
+    print("Welcome to your To-Do List!")
+    tasks = load_tasks()  # Load any saved tasks when the program starts
+ 
+    while True: # infinite loop — keeps showing the menu and asking for input until the user quits
+        show_menu()
+        choice = input("Enter your choice (1-5): ").strip()
+ 
+        if choice == "1": # check what the user typed and call the matching function
+            show_tasks(tasks)
+        elif choice == "2":
+            add_task(tasks)
+        elif choice == "3":
+            complete_task(tasks)
+        elif choice == "4":
+            delete_task(tasks)
+        elif choice == "5": # the quit option — save the tasks to disk first, say goodbye, then break out of the loop
+            save_tasks(tasks)  # Save before quitting
+            print("Tasks saved. Goodbye!")
+            break
+        else:
+            print("Invalid choice. Please enter a number from 1 to 5.")
+ 
+ 
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,29 @@
+[
+  {
+    "name": "Kevin",
+    "goal": "fat_loss",
+    "sex": "male",
+    "weight_lbs": 231.0,
+    "height_inches": 70.0,
+    "age": 30,
+    "activity": "moderate"
+  },
+  {
+    "name": "Jon",
+    "goal": "maintenance",
+    "sex": "male",
+    "weight_lbs": 200.0,
+    "height_inches": 70.0,
+    "age": 30,
+    "activity": "active"
+  },
+  {
+    "name": "Mark",
+    "goal": "fat_loss",
+    "sex": "male",
+    "weight_lbs": 250.0,
+    "height_inches": 80.0,
+    "age": 25,
+    "activity": "moderate"
+  }
+]

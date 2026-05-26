@@ -1,0 +1,15 @@
+# Orchestration layer
+APScheduler>=3.10,<4.0
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.27,<1.0
+httpx>=0.27,<1.0
+
+# Enrichment / NLP layer
+spacy>=3.7,<4.0
+sentence-transformers>=2.5,<4.0
+vaderSentiment>=3.3,<4.0
+numpy>=1.24,<3.0
+
+# Clustering & scoring
+hdbscan>=0.8.33,<1.0
+scikit-learn>=1.3,<2.0
