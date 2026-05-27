@@ -1,19 +1,3 @@
-"""
-jobs.py  (extended for clustering & scoring)
---------------------------------------------
-The daily flow is now:
-
-  Phase 1 — Collect raw signals from every connector
-  Phase 2 — Dedupe and persist
-  Phase 3 — Enrich (topics, sentiment, quality, industry)
-  Phase 4 — Cluster + score (NEW)
-  Phase 5 — Notify OpenClaw with combined summary
-
-Phases 3 and 4 are isolated in their own try/except. If clustering fails
-(missing model, OOM, etc.) the raw collection + enrichment data is still
-persisted. You can rerun clustering separately via the API endpoint.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -25,10 +9,14 @@ from app.connectors.base import BaseConnector
 from app.connectors.tier2 import TIER2_CONNECTORS
 from app.dedup import Deduper
 from app.enrichment import enrich_new_signals
+from app.forecasting import forecast_cluster, ForecastUnavailable
 from app.health.tracker import shared_tracker
 from app.integrations.openclaw import openclaw_client
 
 logger = logging.getLogger(__name__)
+
+
+TOP_N_TO_FORECAST = 20
 
 
 # from app.connectors.hackernews import HackerNewsConnector
@@ -51,11 +39,6 @@ def all_connectors() -> list[BaseConnector]:
 
 
 def run_all_collectors() -> dict:
-    """
-    Full pipeline: collect -> dedup -> persist -> enrich -> cluster -> notify.
-
-    Never raises. Returns a summary dict.
-    """
     deduper = Deduper()
     started = time.monotonic()
 
@@ -64,7 +47,6 @@ def run_all_collectors() -> dict:
     total_new = 0
     total_failures = 0
 
-    # Phase 1+2: collect, dedup, persist
     for connector in all_connectors():
         result = _run_one(connector, deduper)
         per_collector_results.append(result)
@@ -75,11 +57,11 @@ def run_all_collectors() -> dict:
 
     collect_elapsed = time.monotonic() - started
 
-    # Phase 3: enrichment
     enrichment_summary = _run_enrichment()
 
-    # Phase 4: clustering + scoring
     clustering_summary = _run_clustering()
+
+    forecasting_summary = _run_forecasting()
 
     elapsed = time.monotonic() - started
 
@@ -93,13 +75,16 @@ def run_all_collectors() -> dict:
         "per_collector": per_collector_results,
         "enrichment": enrichment_summary,
         "clustering": clustering_summary,
+        "forecasting": forecasting_summary,
     }
 
     logger.info(
-        "scheduler: run complete — %d new / %d fetched, %d enriched, %d clusters, %.2fs total",
+        "scheduler: run complete — %d new / %d fetched, %d enriched, "
+        "%d clusters, %d forecasts, %.2fs total",
         total_new, total_fetched,
         enrichment_summary["processed"],
         clustering_summary.get("clusters", 0),
+        forecasting_summary.get("forecasts_written", 0),
         elapsed,
     )
 
@@ -138,7 +123,6 @@ def _run_one(connector: BaseConnector, deduper: Deduper) -> dict:
 
 
 def _run_enrichment() -> dict:
-    """Run the enrichment pipeline. Isolated try/except for safety."""
     try:
         return enrich_new_signals()
     except Exception as exc:
@@ -154,12 +138,6 @@ def _run_enrichment() -> dict:
 
 
 def _run_clustering() -> dict:
-    """
-    Run clustering + scoring. Returns a small summary dict.
-
-    Isolated try/except — if hdbscan is missing or model OOMs, the
-    enrichment data still persists and we report the failure.
-    """
     started = time.monotonic()
     try:
         rows = db.load_enriched_for_clustering()
@@ -199,10 +177,73 @@ def _run_clustering() -> dict:
         }
 
 
+def _run_forecasting() -> dict:
+    started = time.monotonic()
+
+    try:
+        top_clusters = db.top_clusters(limit=TOP_N_TO_FORECAST, sort_by="composite")
+        if not top_clusters:
+            return {
+                "forecasts_written": 0,
+                "clusters_attempted": 0,
+                "insufficient_history": 0,
+                "duration_seconds": 0,
+            }
+
+        db.delete_all_forecasts()
+
+        written = 0
+        insufficient = 0
+        attempted = len(top_clusters)
+
+        for cluster in top_clusters:
+            cluster_id = cluster["cluster_id"]
+            history = db.cluster_history_series(cluster_id, days=365)
+            sizes = [float(size) for _day, size in history]
+            sources = db.distinct_sources_in_cluster(cluster_id)
+
+            result = forecast_cluster(sizes, distinct_sources=sources)
+
+            if isinstance(result, ForecastUnavailable):
+                insufficient += 1
+                continue
+
+            for f in result:
+                db.save_forecast(
+                    cluster_id=cluster_id,
+                    horizon_days=f.horizon_days,
+                    predicted_size=f.predicted_size,
+                    confidence_lower=f.confidence_lower,
+                    confidence_upper=f.confidence_upper,
+                    confidence_score=f.confidence_score,
+                    model=f.model,
+                    history_days=f.history_days,
+                )
+                written += 1
+
+        elapsed = time.monotonic() - started
+        return {
+            "forecasts_written": written,
+            "clusters_attempted": attempted,
+            "insufficient_history": insufficient,
+            "duration_seconds": round(elapsed, 2),
+        }
+
+    except Exception as exc:
+        logger.exception("scheduler: forecasting phase failed: %s", exc)
+        return {
+            "forecasts_written": 0,
+            "clusters_attempted": 0,
+            "insufficient_history": 0,
+            "duration_seconds": round(time.monotonic() - started, 2),
+            "fatal_error": str(exc),
+        }
+
+
 def _notify_openclaw(summary: dict) -> None:
-    """Format and send the run summary to OpenClaw."""
     enrich = summary["enrichment"]
     clust = summary["clustering"]
+    forecast = summary["forecasting"]
 
     lines = [
         f"Pipeline run complete in {summary['duration_seconds']}s",
@@ -212,6 +253,8 @@ def _notify_openclaw(summary: dict) -> None:
         f"({enrich['signals_per_second']} signals/sec)",
         f"Clustered into {clust.get('clusters', 0)} topics "
         f"({clust.get('scored', 0)} scored)",
+        f"Forecasts: {forecast.get('forecasts_written', 0)} written, "
+        f"{forecast.get('insufficient_history', 0)} skipped (insufficient history)",
         "",
     ]
     for c in summary["per_collector"]:

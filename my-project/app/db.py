@@ -1,21 +1,3 @@
-"""
-db.py  (extended for clustering & scoring)
-------------------------------------------
-Adds three tables and their helpers:
-
-  * clusters         — one row per discovered topic cluster
-  * signal_clusters  — many signals : one cluster
-  * cluster_scores   — trend / opportunity / market scores per cluster
-
-Plus helper functions:
-  * load_enriched_for_clustering()  — pulls signals + embeddings
-  * save_clusters(...)              — atomic replacement of all clusters
-  * top_clusters(limit, sort_by)    — for the /clusters/top API
-  * cluster_with_signals(id)        — drill-down for /clusters/{id}
-
-REPLACES the previous db.py. All previous functions remain.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -77,8 +59,6 @@ CREATE TABLE IF NOT EXISTS topics (
 CREATE INDEX IF NOT EXISTS idx_topics_industry  ON topics(industry);
 CREATE INDEX IF NOT EXISTS idx_topics_sentiment ON topics(sentiment_label);
 
--- Clustering & scoring tables --------------------------------------------
-
 CREATE TABLE IF NOT EXISTS clusters (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     label         TEXT    NOT NULL,
@@ -113,16 +93,29 @@ CREATE TABLE IF NOT EXISTS cluster_scores (
 
 CREATE INDEX IF NOT EXISTS idx_cluster_scores_composite ON cluster_scores(composite_score);
 
--- Daily snapshot of cluster sizes, used by trend score calculation.
--- One row per (cluster, day). Lets us compute "growth velocity" by
--- comparing today's size against the rolling average of the last 7 days.
 CREATE TABLE IF NOT EXISTS cluster_history (
     cluster_id   INTEGER NOT NULL,
-    snapshot_day TEXT    NOT NULL,   -- YYYY-MM-DD UTC
+    snapshot_day TEXT    NOT NULL,
     size         INTEGER NOT NULL,
     PRIMARY KEY (cluster_id, snapshot_day),
     FOREIGN KEY (cluster_id) REFERENCES clusters(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS forecasts (
+    cluster_id        INTEGER NOT NULL,
+    horizon_days      INTEGER NOT NULL,
+    predicted_size    REAL    NOT NULL,
+    confidence_lower  REAL,
+    confidence_upper  REAL,
+    confidence_score  REAL,
+    model             TEXT,
+    history_days      INTEGER NOT NULL,
+    computed_at       TEXT NOT NULL,
+    PRIMARY KEY (cluster_id, horizon_days),
+    FOREIGN KEY (cluster_id) REFERENCES clusters(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_forecasts_horizon ON forecasts(horizon_days);
 """
 
 
@@ -152,8 +145,6 @@ def _connect():
     finally:
         conn.close()
 
-
-# ---------- dedup (unchanged) --------------------------------------------
 
 def signal_hash(record: dict[str, Any]) -> str:
     url = (record.get("url") or "").strip().lower()
@@ -233,8 +224,6 @@ def insert_records(records: Iterable[dict[str, Any]]) -> tuple[int, int]:
             duplicates += 1
     return inserted, duplicates
 
-
-# ---------- enrichment helpers (unchanged) -------------------------------
 
 def signals_needing_enrichment(limit: int = 1000) -> list[dict[str, Any]]:
     with _connect() as conn:
@@ -327,16 +316,7 @@ def enrichment_stats() -> dict[str, Any]:
     }
 
 
-# ---------- clustering helpers (NEW) -------------------------------------
-
 def load_enriched_for_clustering() -> list[dict[str, Any]]:
-    """
-    Pull every enriched signal with its embedding, for clustering.
-
-    Returns rows shaped for the clusterer:
-        signal_id, source, title, summary, keywords, industry,
-        sentiment_score, source_quality, embedding (bytes)
-    """
     with _connect() as conn:
         cur = conn.execute(
             """
@@ -364,25 +344,11 @@ def save_clusters(
     clusters: list[dict[str, Any]],
     assignments: list[tuple[int, int]],
 ) -> dict[int, int]:
-    """
-    Atomically replace ALL clusters and their signal assignments.
-
-    Args:
-      clusters: list of dicts with keys
-        local_id, label, keywords, industry, size, centroid_bytes
-      assignments: list of (signal_id, local_cluster_id) pairs
-
-    Returns: mapping from local_cluster_id -> db_cluster_id (the persisted PK)
-    """
     now = _now_iso()
 
     with _lock, _connect() as conn:
-        # Wipe previous clusters (CASCADE handles signal_clusters,
-        # cluster_scores, cluster_history). History is intentionally
-        # rebuilt to keep cluster IDs stable-ish per run.
         conn.execute("DELETE FROM clusters")
 
-        # Insert new clusters and remember the new PK per local_id.
         local_to_db: dict[int, int] = {}
         for cluster in clusters:
             cur = conn.execute(
@@ -404,11 +370,10 @@ def save_clusters(
             )
             local_to_db[cluster["local_id"]] = cur.lastrowid
 
-        # Insert signal-to-cluster mapping.
         for signal_id, local_cluster_id in assignments:
             db_cluster_id = local_to_db.get(local_cluster_id)
             if db_cluster_id is None:
-                continue   # signal was noise (cluster -1)
+                continue
             conn.execute(
                 "INSERT OR REPLACE INTO signal_clusters (signal_id, cluster_id) "
                 "VALUES (?, ?)",
@@ -419,15 +384,7 @@ def save_clusters(
     return local_to_db
 
 
-def save_cluster_scores(
-    scores: list[dict[str, Any]],
-) -> None:
-    """
-    Upsert scores for each cluster.
-
-    Each dict has keys:
-        cluster_id, trend_score, opportunity_score, market_score, composite_score
-    """
+def save_cluster_scores(scores: list[dict[str, Any]]) -> None:
     now = _now_iso()
     with _lock, _connect() as conn:
         for s in scores:
@@ -456,10 +413,6 @@ def record_cluster_history(
     *,
     snapshot_day: str | None = None,
 ) -> None:
-    """
-    Save today's size for one cluster. Idempotent — re-running on the
-    same day just updates the row.
-    """
     day = snapshot_day or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     with _lock, _connect() as conn:
         conn.execute(
@@ -471,10 +424,6 @@ def record_cluster_history(
 
 
 def recent_cluster_sizes(cluster_id: int, days: int = 7) -> list[int]:
-    """
-    Return up to `days` recent size snapshots for this cluster, oldest first.
-    Used by the trend score to compute growth velocity.
-    """
     with _connect() as conn:
         cur = conn.execute(
             """
@@ -490,7 +439,126 @@ def recent_cluster_sizes(cluster_id: int, days: int = 7) -> list[int]:
     return list(reversed(rows))
 
 
-# ---------- read APIs (for /clusters endpoints) --------------------------
+def cluster_history_series(
+    cluster_id: int,
+    *,
+    days: int = 365,
+) -> list[tuple[str, int]]:
+    with _connect() as conn:
+        cur = conn.execute(
+            """
+            SELECT snapshot_day, size
+            FROM cluster_history
+            WHERE cluster_id = ?
+            ORDER BY snapshot_day ASC
+            """,
+            (cluster_id,),
+        )
+        rows = [(r["snapshot_day"], int(r["size"])) for r in cur.fetchall()]
+    return rows[-days:]
+
+
+def save_forecast(
+    *,
+    cluster_id: int,
+    horizon_days: int,
+    predicted_size: float,
+    confidence_lower: float | None,
+    confidence_upper: float | None,
+    confidence_score: float,
+    model: str,
+    history_days: int,
+) -> None:
+    with _lock, _connect() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO forecasts
+                (cluster_id, horizon_days, predicted_size,
+                 confidence_lower, confidence_upper, confidence_score,
+                 model, history_days, computed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                cluster_id, horizon_days, predicted_size,
+                confidence_lower, confidence_upper, confidence_score,
+                model, history_days, _now_iso(),
+            ),
+        )
+        conn.commit()
+
+
+def delete_forecasts_for(cluster_id: int) -> None:
+    with _lock, _connect() as conn:
+        conn.execute("DELETE FROM forecasts WHERE cluster_id = ?", (cluster_id,))
+        conn.commit()
+
+
+def delete_all_forecasts() -> None:
+    with _lock, _connect() as conn:
+        conn.execute("DELETE FROM forecasts")
+        conn.commit()
+
+
+def forecasts_for_cluster(cluster_id: int) -> list[dict[str, Any]]:
+    with _connect() as conn:
+        cur = conn.execute(
+            """
+            SELECT horizon_days, predicted_size,
+                   confidence_lower, confidence_upper, confidence_score,
+                   model, history_days, computed_at
+            FROM forecasts
+            WHERE cluster_id = ?
+            ORDER BY horizon_days
+            """,
+            (cluster_id,),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
+def all_forecasts(
+    *,
+    horizon_days: int | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    with _connect() as conn:
+        if horizon_days is not None:
+            cur = conn.execute(
+                """
+                SELECT
+                    f.cluster_id, c.label, c.industry, c.size,
+                    f.horizon_days, f.predicted_size,
+                    f.confidence_lower, f.confidence_upper, f.confidence_score,
+                    f.model, f.history_days
+                FROM forecasts f
+                JOIN clusters c ON c.id = f.cluster_id
+                WHERE f.horizon_days = ?
+                ORDER BY f.predicted_size DESC
+                LIMIT ?
+                """,
+                (horizon_days, limit),
+            )
+        else:
+            cur = conn.execute(
+                """
+                SELECT
+                    f.cluster_id, c.label, c.industry, c.size,
+                    f.horizon_days, f.predicted_size,
+                    f.confidence_lower, f.confidence_upper, f.confidence_score,
+                    f.model, f.history_days
+                FROM forecasts f
+                JOIN clusters c ON c.id = f.cluster_id
+                ORDER BY f.cluster_id, f.horizon_days
+                LIMIT ?
+                """,
+                (limit,),
+            )
+        return [dict(r) for r in cur.fetchall()]
+
+
+def count_forecasts() -> int:
+    with _connect() as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM forecasts").fetchone()[0])
+
 
 def count_clusters() -> int:
     with _connect() as conn:
@@ -502,10 +570,6 @@ def top_clusters(
     limit: int = 20,
     sort_by: str = "composite",
 ) -> list[dict[str, Any]]:
-    """
-    Return the top N clusters sorted by one of:
-        composite, trend, opportunity, market, size
-    """
     column = {
         "composite":   "cs.composite_score",
         "trend":       "cs.trend_score",
@@ -533,7 +597,6 @@ def top_clusters(
 
 
 def cluster_with_signals(cluster_id: int) -> dict[str, Any] | None:
-    """Full details for one cluster including its member signals."""
     with _connect() as conn:
         cluster_row = conn.execute(
             """
@@ -573,7 +636,6 @@ def cluster_with_signals(cluster_id: int) -> dict[str, Any] | None:
 
 
 def _cluster_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
-    """Format one DB row as a JSON-safe dict, parsing the keywords blob."""
     try:
         keywords = json.loads(row["keywords_json"] or "[]")
     except (TypeError, json.JSONDecodeError):
@@ -591,7 +653,19 @@ def _cluster_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-# ---------- small utilities ----------------------------------------------
+def distinct_sources_in_cluster(cluster_id: int) -> int:
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(DISTINCT s.source) AS n
+            FROM signal_clusters sc
+            JOIN signals s ON s.id = sc.signal_id
+            WHERE sc.cluster_id = ?
+            """,
+            (cluster_id,),
+        ).fetchone()
+    return int(row["n"] or 0)
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
