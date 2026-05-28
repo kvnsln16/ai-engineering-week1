@@ -10,6 +10,8 @@ from app.connectors.tier2 import TIER2_CONNECTORS
 from app.dedup import Deduper
 from app.enrichment import enrich_new_signals
 from app.forecasting import forecast_cluster, ForecastUnavailable
+from app.predictions import generate_all_predictions
+from app.reporting import generate_report
 from app.health.tracker import shared_tracker
 from app.integrations.openclaw import openclaw_client
 
@@ -58,10 +60,10 @@ def run_all_collectors() -> dict:
     collect_elapsed = time.monotonic() - started
 
     enrichment_summary = _run_enrichment()
-
     clustering_summary = _run_clustering()
-
     forecasting_summary = _run_forecasting()
+    predictions_summary = _run_predictions()
+    reporting_summary = _run_reporting()
 
     elapsed = time.monotonic() - started
 
@@ -76,15 +78,19 @@ def run_all_collectors() -> dict:
         "enrichment": enrichment_summary,
         "clustering": clustering_summary,
         "forecasting": forecasting_summary,
+        "predictions": predictions_summary,
+        "reporting": reporting_summary,
     }
 
     logger.info(
         "scheduler: run complete — %d new / %d fetched, %d enriched, "
-        "%d clusters, %d forecasts, %.2fs total",
+        "%d clusters, %d forecasts, %d predictions, report=%s, %.2fs total",
         total_new, total_fetched,
         enrichment_summary["processed"],
         clustering_summary.get("clusters", 0),
         forecasting_summary.get("forecasts_written", 0),
+        predictions_summary.get("written", 0),
+        "ok" if reporting_summary.get("md_path") else "failed",
         elapsed,
     )
 
@@ -128,11 +134,8 @@ def _run_enrichment() -> dict:
     except Exception as exc:
         logger.exception("scheduler: enrichment phase failed: %s", exc)
         return {
-            "processed": 0,
-            "errors": 0,
-            "batches": 0,
-            "duration_seconds": 0,
-            "signals_per_second": 0,
+            "processed": 0, "errors": 0, "batches": 0,
+            "duration_seconds": 0, "signals_per_second": 0,
             "fatal_error": str(exc),
         }
 
@@ -143,9 +146,7 @@ def _run_clustering() -> dict:
         rows = db.load_enriched_for_clustering()
         if not rows:
             return {
-                "signals_clustered": 0,
-                "clusters": 0,
-                "scored": 0,
+                "signals_clustered": 0, "clusters": 0, "scored": 0,
                 "duration_seconds": 0,
             }
 
@@ -169,9 +170,7 @@ def _run_clustering() -> dict:
     except Exception as exc:
         logger.exception("scheduler: clustering phase failed: %s", exc)
         return {
-            "signals_clustered": 0,
-            "clusters": 0,
-            "scored": 0,
+            "signals_clustered": 0, "clusters": 0, "scored": 0,
             "duration_seconds": round(time.monotonic() - started, 2),
             "fatal_error": str(exc),
         }
@@ -184,10 +183,8 @@ def _run_forecasting() -> dict:
         top_clusters = db.top_clusters(limit=TOP_N_TO_FORECAST, sort_by="composite")
         if not top_clusters:
             return {
-                "forecasts_written": 0,
-                "clusters_attempted": 0,
-                "insufficient_history": 0,
-                "duration_seconds": 0,
+                "forecasts_written": 0, "clusters_attempted": 0,
+                "insufficient_history": 0, "duration_seconds": 0,
             }
 
         db.delete_all_forecasts()
@@ -232,10 +229,34 @@ def _run_forecasting() -> dict:
     except Exception as exc:
         logger.exception("scheduler: forecasting phase failed: %s", exc)
         return {
-            "forecasts_written": 0,
-            "clusters_attempted": 0,
+            "forecasts_written": 0, "clusters_attempted": 0,
             "insufficient_history": 0,
             "duration_seconds": round(time.monotonic() - started, 2),
+            "fatal_error": str(exc),
+        }
+
+
+def _run_predictions() -> dict:
+    try:
+        return generate_all_predictions()
+    except Exception as exc:
+        logger.exception("scheduler: predictions phase failed: %s", exc)
+        return {
+            "written": 0, "clusters_attempted": 0, "skipped": 0,
+            "duration_seconds": 0,
+            "fatal_error": str(exc),
+        }
+
+
+def _run_reporting() -> dict:
+    try:
+        return generate_report()
+    except Exception as exc:
+        logger.exception("scheduler: reporting phase failed: %s", exc)
+        return {
+            "md_path": None,
+            "html_path": None,
+            "duration_seconds": 0,
             "fatal_error": str(exc),
         }
 
@@ -244,6 +265,8 @@ def _notify_openclaw(summary: dict) -> None:
     enrich = summary["enrichment"]
     clust = summary["clustering"]
     forecast = summary["forecasting"]
+    pred = summary["predictions"]
+    report = summary["reporting"]
 
     lines = [
         f"Pipeline run complete in {summary['duration_seconds']}s",
@@ -254,7 +277,9 @@ def _notify_openclaw(summary: dict) -> None:
         f"Clustered into {clust.get('clusters', 0)} topics "
         f"({clust.get('scored', 0)} scored)",
         f"Forecasts: {forecast.get('forecasts_written', 0)} written, "
-        f"{forecast.get('insufficient_history', 0)} skipped (insufficient history)",
+        f"{forecast.get('insufficient_history', 0)} skipped",
+        f"Predictions: {pred.get('written', 0)} generated",
+        f"Report: {report.get('md_path') or 'generation failed'}",
         "",
     ]
     for c in summary["per_collector"]:

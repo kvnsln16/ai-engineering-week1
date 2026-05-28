@@ -1,0 +1,206 @@
+# Signal Intelligence Report
+
+**Generated:** {{ generated_at_readable }}  
+**Report ID:** `{{ timestamp }}`
+
+---
+
+## 1. Executive Summary
+
+This report covers **{{ total_signals }} signals** across **{{ total_clusters }} topic clusters**, with **{{ total_predictions }} predictions** generated.
+
+{% if top_clusters %}
+**Top movers right now** (by composite score):
+
+{% for c in top_clusters[:3] %}
+- **{{ c.label }}** ({{ c.industry or "other" }}) — composite={{ "%.3f"|format(c.composite_score or 0) }}, size={{ c.size }}
+{% endfor %}
+{% else %}
+_No clusters available yet. Run the pipeline to populate data._
+{% endif %}
+
+{% if threats %}
+**Top risks flagged:** {{ threats|length }} threats detected — see Section 9 for details.
+{% endif %}
+
+{% if weak_signals %}
+**Early signals detected:** {{ weak_signals|length }} weak signals identified — see Section 7.
+{% endif %}
+
+---
+
+## 2. Market Forecast
+
+Forecasted cluster sizes at the 30-day horizon, sorted by predicted size.
+
+{% if top_forecasts_30 %}
+| Topic | Industry | Current | Predicted (30d) | Confidence |
+|-------|----------|---------|------------------|------------|
+{% for f in top_forecasts_30[:10] %}
+| {{ f.label }} | {{ f.industry or "other" }} | {{ f.size }} | {{ "%.1f"|format(f.predicted_size) }} | {{ "%.2f"|format(f.confidence_score or 0) }} |
+{% endfor %}
+
+_See `/forecasts/horizon/{30,90,180,365}` for the full set._
+{% else %}
+_No forecasts available yet. Forecasts require at least 30 days of cluster history; see `docs/forecasting.md`._
+{% endif %}
+
+---
+
+## 3. Opportunity Report
+
+Top clusters ranked by **opportunity_score** (demand × monetization × sentiment).
+
+{% if top_opportunities %}
+| Topic | Industry | Opportunity | Size | Trend |
+|-------|----------|-------------|------|-------|
+{% for c in top_opportunities[:10] %}
+| {{ c.label }} | {{ c.industry or "other" }} | {{ "%.3f"|format(c.opportunity_score or 0) }} | {{ c.size }} | {{ "%.3f"|format(c.trend_score or 0) }} |
+{% endfor %}
+
+_See `docs/scoring.md` for the opportunity_score formula._
+{% else %}
+_No scored clusters yet._
+{% endif %}
+
+---
+
+## 4. Topic Heatmap
+
+Signal distribution by industry. Higher signal counts and composite scores indicate hotter sectors.
+
+{% if heatmap.industries %}
+| Industry | Clusters | Signals | Avg Composite |
+|----------|----------|---------|----------------|
+{% for ind in heatmap.industries %}
+| {{ ind.industry }} | {{ ind.cluster_count }} | {{ ind.total_signals }} | {{ "%.3f"|format(ind.avg_composite) }} |
+{% endfor %}
+{% else %}
+_No industry data available yet._
+{% endif %}
+
+---
+
+## 5. Trend Velocity
+
+Topics ranked by **trend_score** (growth velocity vs recent average).
+
+{% if top_trend_velocity %}
+| Topic | Industry | Trend Score | Size |
+|-------|----------|-------------|------|
+{% for c in top_trend_velocity[:10] %}
+| {{ c.label }} | {{ c.industry or "other" }} | {{ "%.3f"|format(c.trend_score or 0) }} | {{ c.size }} |
+{% endfor %}
+
+_Trend scores require multiple days of cluster history. Day-1 scores will all be 0.500 (neutral)._
+{% else %}
+_No trend data yet._
+{% endif %}
+
+---
+
+## 6. Market Analysis
+
+Cross-source consensus and source distribution.
+
+**Average distinct sources per cluster:** {{ market.avg_sources_per_cluster }}
+
+{% if market.sources_distribution %}
+**Signals collected per source:**
+
+| Source | Signals |
+|--------|---------|
+{% for s in market.sources_distribution %}
+| {{ s.source }} | {{ s.signal_count }} |
+{% endfor %}
+{% else %}
+_No signals yet._
+{% endif %}
+
+---
+
+## 7. Weak Signal Report
+
+> **Definition:** {{ definitions.weak_signal }}
+
+{% if weak_signals %}
+| Topic | Industry | Size | Distinct Sources |
+|-------|----------|------|------------------|
+{% for w in weak_signals %}
+| {{ w.label }} | {{ w.industry or "other" }} | {{ w.size }} | {{ w.distinct_sources }} |
+{% endfor %}
+{% else %}
+_No weak signals match the criteria right now. This typically means either (a) the database is small, or (b) all small clusters are single-source._
+{% endif %}
+
+---
+
+## 8. Contrarian Report
+
+> **Definition:** {{ definitions.contrarian }}
+
+{% if contrarian_signals %}
+| Topic | Forecast | Sentiment | Type |
+|-------|----------|-----------|------|
+{% for c in contrarian_signals %}
+| {{ c.label }} | {{ c.direction }} | {{ c.avg_sentiment }} | {{ c.contrarian_type }} |
+{% endfor %}
+
+**Sample predictions:**
+
+{% for c in contrarian_signals[:3] %}
+- _{{ c.text }}_ (confidence {{ "%.2f"|format(c.confidence) }})
+{% endfor %}
+{% else %}
+_No contrarian signals detected. All cluster forecasts currently align with their member sentiment._
+{% endif %}
+
+---
+
+## 9. Threat Report
+
+> **Definition:** {{ definitions.threat }}
+
+{% if threats %}
+| Topic | Industry | Type | Forecast | Confidence |
+|-------|----------|------|----------|------------|
+{% for t in threats %}
+| {{ t.label }} | {{ t.industry }} | {{ t.threat_type }} | {{ t.direction }} | {{ "%.2f"|format(t.confidence) }} |
+{% endfor %}
+
+**Action items:**
+
+{% for t in threats[:3] %}
+- **{{ t.label }}** — {{ t.text }}
+{% endfor %}
+{% else %}
+_No threats detected by the current rules._
+{% endif %}
+
+---
+
+## 10. Recommendations
+
+Top predictions ranked by confidence then probability.
+
+{% if top_recommendations %}
+{% for p in top_recommendations[:10] %}
+### {{ loop.index }}. {{ p.cluster_label or "Cluster " ~ p.cluster_id }} ({{ p.horizon_days }}d)
+
+{{ p.text }}
+
+- **Direction:** {{ p.direction }}
+- **Probability:** {{ "%.2f"|format(p.probability) }}
+- **Confidence:** {{ "%.2f"|format(p.confidence) }}
+{% if p.recommended_action %}
+- **Action:** {{ p.recommended_action }}
+{% endif %}
+
+{% endfor %}
+{% else %}
+_No predictions available yet. Predictions require forecasts, which require 30+ days of cluster history._
+{% endif %}
+
+---
+
+_Report generated by First Project orchestrator. See `docs/scoring.md`, `docs/forecasting.md`, and `docs/predictions.md` for methodology._

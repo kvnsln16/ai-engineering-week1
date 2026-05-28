@@ -116,6 +116,28 @@ CREATE TABLE IF NOT EXISTS forecasts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_forecasts_horizon ON forecasts(horizon_days);
+
+CREATE TABLE IF NOT EXISTS predictions (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    cluster_id            INTEGER NOT NULL,
+    horizon_days          INTEGER NOT NULL,
+    text                  TEXT    NOT NULL,
+    probability           REAL    NOT NULL,
+    confidence            REAL    NOT NULL,
+    direction             TEXT    NOT NULL,
+    recommended_action    TEXT,
+    supporting_signal_ids TEXT,
+    counter_signal_ids    TEXT,
+    forecast_predicted    REAL,
+    forecast_lower        REAL,
+    forecast_upper        REAL,
+    created_at            TEXT    NOT NULL,
+    FOREIGN KEY (cluster_id) REFERENCES clusters(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_predictions_cluster    ON predictions(cluster_id);
+CREATE INDEX IF NOT EXISTS idx_predictions_horizon    ON predictions(horizon_days);
+CREATE INDEX IF NOT EXISTS idx_predictions_confidence ON predictions(confidence);
 """
 
 
@@ -560,6 +582,170 @@ def count_forecasts() -> int:
         return int(conn.execute("SELECT COUNT(*) FROM forecasts").fetchone()[0])
 
 
+def save_prediction(
+    *,
+    cluster_id: int,
+    horizon_days: int,
+    text: str,
+    probability: float,
+    confidence: float,
+    direction: str,
+    recommended_action: str | None,
+    supporting_signal_ids: list[int],
+    counter_signal_ids: list[int],
+    forecast_predicted: float | None,
+    forecast_lower: float | None,
+    forecast_upper: float | None,
+) -> int:
+    with _lock, _connect() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO predictions (
+                cluster_id, horizon_days, text, probability, confidence,
+                direction, recommended_action,
+                supporting_signal_ids, counter_signal_ids,
+                forecast_predicted, forecast_lower, forecast_upper,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                cluster_id,
+                horizon_days,
+                text,
+                probability,
+                confidence,
+                direction,
+                recommended_action,
+                json.dumps(supporting_signal_ids),
+                json.dumps(counter_signal_ids),
+                forecast_predicted,
+                forecast_lower,
+                forecast_upper,
+                _now_iso(),
+            ),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+
+
+def delete_all_predictions() -> None:
+    with _lock, _connect() as conn:
+        conn.execute("DELETE FROM predictions")
+        conn.commit()
+
+
+def predictions_for_cluster(cluster_id: int) -> list[dict[str, Any]]:
+    with _connect() as conn:
+        cur = conn.execute(
+            """
+            SELECT * FROM predictions
+            WHERE cluster_id = ?
+            ORDER BY horizon_days
+            """,
+            (cluster_id,),
+        )
+        return [_prediction_row_to_dict(r) for r in cur.fetchall()]
+
+
+def predictions_filtered(
+    *,
+    horizon_days: int | None = None,
+    min_confidence: float | None = None,
+    cluster_id: int | None = None,
+    direction: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    where_clauses: list[str] = []
+    params: list[Any] = []
+
+    if horizon_days is not None:
+        where_clauses.append("p.horizon_days = ?")
+        params.append(horizon_days)
+    if min_confidence is not None:
+        where_clauses.append("p.confidence >= ?")
+        params.append(min_confidence)
+    if cluster_id is not None:
+        where_clauses.append("p.cluster_id = ?")
+        params.append(cluster_id)
+    if direction is not None:
+        where_clauses.append("p.direction = ?")
+        params.append(direction)
+
+    where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    with _connect() as conn:
+        cur = conn.execute(
+            f"""
+            SELECT
+                p.*,
+                c.label    AS cluster_label,
+                c.industry AS cluster_industry
+            FROM predictions p
+            LEFT JOIN clusters c ON c.id = p.cluster_id
+            {where_sql}
+            ORDER BY p.confidence DESC, p.probability DESC
+            LIMIT ?
+            """,
+            (*params, limit),
+        )
+        return [_prediction_row_to_dict(r) for r in cur.fetchall()]
+
+
+def prediction_by_id(prediction_id: int) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT p.*, c.label AS cluster_label, c.industry AS cluster_industry
+            FROM predictions p
+            LEFT JOIN clusters c ON c.id = p.cluster_id
+            WHERE p.id = ?
+            """,
+            (prediction_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return _prediction_row_to_dict(row)
+
+
+def count_predictions() -> int:
+    with _connect() as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0])
+
+
+def _prediction_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    try:
+        supporting = json.loads(row["supporting_signal_ids"] or "[]")
+    except (TypeError, json.JSONDecodeError):
+        supporting = []
+    try:
+        counter = json.loads(row["counter_signal_ids"] or "[]")
+    except (TypeError, json.JSONDecodeError):
+        counter = []
+
+    result = {
+        "id":                     row["id"],
+        "cluster_id":             row["cluster_id"],
+        "horizon_days":           row["horizon_days"],
+        "text":                   row["text"],
+        "probability":            row["probability"],
+        "confidence":             row["confidence"],
+        "direction":              row["direction"],
+        "recommended_action":     row["recommended_action"],
+        "supporting_signal_ids":  supporting,
+        "counter_signal_ids":     counter,
+        "forecast_predicted":     row["forecast_predicted"],
+        "forecast_lower":         row["forecast_lower"],
+        "forecast_upper":         row["forecast_upper"],
+        "created_at":             row["created_at"],
+    }
+    keys = row.keys() if hasattr(row, "keys") else []
+    if "cluster_label" in keys:
+        result["cluster_label"] = row["cluster_label"]
+    if "cluster_industry" in keys:
+        result["cluster_industry"] = row["cluster_industry"]
+    return result
+
+
 def count_clusters() -> int:
     with _connect() as conn:
         return int(conn.execute("SELECT COUNT(*) FROM clusters").fetchone()[0])
@@ -633,6 +819,24 @@ def cluster_with_signals(cluster_id: int) -> dict[str, Any] | None:
     result = _cluster_row_to_dict(cluster_row)
     result["signals"] = signals
     return result
+
+
+def cluster_signals_full(cluster_id: int) -> list[dict[str, Any]]:
+    with _connect() as conn:
+        cur = conn.execute(
+            """
+            SELECT
+                s.id, s.source, s.title, s.url, s.summary, s.published_at,
+                t.sentiment_label, t.sentiment_score, t.source_quality,
+                t.industry
+            FROM signal_clusters sc
+            JOIN signals s ON s.id = sc.signal_id
+            LEFT JOIN topics t ON t.signal_id = s.id
+            WHERE sc.cluster_id = ?
+            """,
+            (cluster_id,),
+        )
+        return [dict(r) for r in cur.fetchall()]
 
 
 def _cluster_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:

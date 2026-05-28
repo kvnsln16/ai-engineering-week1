@@ -1,26 +1,30 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, BackgroundTasks, Query
+from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from app import db
 from app.forecasting import HORIZONS, MIN_HISTORY_DAYS
 from app.health.tracker import shared_tracker
 from app.integrations.openclaw import openclaw_client
+from app.reporting import generate_report, list_reports
 
 logger = logging.getLogger(__name__)
 
 
 SORT_OPTIONS = {"composite", "trend", "opportunity", "market", "size"}
+DIRECTIONS = {"growth", "decline", "stable"}
 
 
 def create_app(*, trigger_callback=None) -> FastAPI:
     app = FastAPI(
         title="First Project Orchestrator",
-        version="1.3.0",
-        description="Signal pipeline: collect, enrich, cluster, score, forecast.",
+        version="1.5.0",
+        description="Signal pipeline: collect, enrich, cluster, forecast, predict, report.",
     )
 
     @app.get("/")
@@ -35,10 +39,11 @@ def create_app(*, trigger_callback=None) -> FastAPI:
             snapshot["enriched_signals"] = db.count_enriched()
             snapshot["clusters"] = db.count_clusters()
             snapshot["forecasts"] = db.count_forecasts()
+            snapshot["predictions"] = db.count_predictions()
         except Exception as exc:
             logger.warning("health: could not read DB counts: %s", exc)
             for k in ("total_signals_in_db", "enriched_signals",
-                      "clusters", "forecasts"):
+                      "clusters", "forecasts", "predictions"):
                 snapshot[k] = None
         return snapshot
 
@@ -191,6 +196,151 @@ def create_app(*, trigger_callback=None) -> FastAPI:
             "forecasts":  forecasts,
         }
 
+    @app.get("/predictions/stats")
+    def predictions_stats() -> dict[str, Any]:
+        total = db.count_predictions()
+        return {
+            "total_predictions": total,
+            "horizons":          HORIZONS,
+            "directions":        sorted(DIRECTIONS),
+        }
+
+    @app.get("/predictions")
+    def list_predictions(
+        horizon: int | None = Query(default=None),
+        min_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
+        cluster_id: int | None = Query(default=None),
+        direction: str | None = Query(default=None),
+        limit: int = Query(default=50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        if horizon is not None and horizon not in HORIZONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"horizon must be one of {HORIZONS}",
+            )
+        if direction is not None and direction not in DIRECTIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"direction must be one of {sorted(DIRECTIONS)}",
+            )
+
+        predictions = db.predictions_filtered(
+            horizon_days=horizon,
+            min_confidence=min_confidence,
+            cluster_id=cluster_id,
+            direction=direction,
+            limit=limit,
+        )
+        return {
+            "filters": {
+                "horizon":        horizon,
+                "min_confidence": min_confidence,
+                "cluster_id":     cluster_id,
+                "direction":      direction,
+            },
+            "count":       len(predictions),
+            "predictions": predictions,
+        }
+
+    @app.get("/predictions/top")
+    def predictions_top(
+        n: int = Query(default=20, ge=1, le=100),
+    ) -> dict[str, Any]:
+        predictions = db.predictions_filtered(limit=n)
+        return {"n": len(predictions), "predictions": predictions}
+
+    @app.get("/predictions/cluster/{cluster_id}")
+    def predictions_for_one_cluster(cluster_id: int) -> dict[str, Any]:
+        cluster = db.cluster_with_signals(cluster_id)
+        if cluster is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"cluster {cluster_id} not found",
+            )
+        predictions = db.predictions_for_cluster(cluster_id)
+        return {
+            "cluster_id":  cluster_id,
+            "label":       cluster["label"],
+            "industry":    cluster["industry"],
+            "count":       len(predictions),
+            "predictions": predictions,
+        }
+
+    @app.get("/predictions/{prediction_id}")
+    def prediction_detail(prediction_id: int) -> dict[str, Any]:
+        prediction = db.prediction_by_id(prediction_id)
+        if prediction is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"prediction {prediction_id} not found",
+            )
+
+        supporting = _hydrate_signals(prediction.get("supporting_signal_ids", []))
+        counter = _hydrate_signals(prediction.get("counter_signal_ids", []))
+        prediction["supporting_signals"] = supporting
+        prediction["counter_signals"] = counter
+
+        return prediction
+
+    @app.get("/reports")
+    def reports_list() -> dict[str, Any]:
+        reports = list_reports()
+        return {
+            "count":   len(reports),
+            "reports": reports,
+        }
+
+    @app.get("/reports/latest")
+    def reports_latest_metadata() -> dict[str, Any]:
+        reports = list_reports()
+        if not reports:
+            raise HTTPException(
+                status_code=404,
+                detail="no reports generated yet — POST /reports/generate to create one",
+            )
+        return reports[0]
+
+    @app.get("/reports/latest/html", response_class=HTMLResponse)
+    def reports_latest_html() -> str:
+        latest = Path("reports") / "latest.html"
+        if not latest.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="no latest.html exists yet — generate a report first",
+            )
+        return latest.read_text(encoding="utf-8")
+
+    @app.get("/reports/latest/markdown", response_class=PlainTextResponse)
+    def reports_latest_markdown() -> str:
+        latest = Path("reports") / "latest.md"
+        if not latest.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="no latest.md exists yet — generate a report first",
+            )
+        return latest.read_text(encoding="utf-8")
+
+    @app.get("/reports/{timestamp}", response_class=PlainTextResponse)
+    def reports_one(timestamp: str) -> str:
+        md_path = Path("reports") / f"report-{timestamp}.md"
+        if not md_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"no report found with timestamp {timestamp!r}",
+            )
+        return md_path.read_text(encoding="utf-8")
+
+    @app.post("/reports/generate")
+    def reports_generate() -> dict[str, Any]:
+        try:
+            return generate_report()
+        except Exception as exc:
+            logger.exception("reports/generate failed: %s", exc)
+            raise HTTPException(
+                status_code=500,
+                detail=f"report generation failed: {exc}",
+            ) from exc
+
     @app.post("/trigger")
     def trigger(
         background_tasks: BackgroundTasks,
@@ -212,3 +362,25 @@ def create_app(*, trigger_callback=None) -> FastAPI:
         return {"status": "queued"}
 
     return app
+
+
+def _hydrate_signals(signal_ids: list[int]) -> list[dict[str, Any]]:
+    if not signal_ids:
+        return []
+
+    from app.db import _connect
+
+    placeholders = ",".join("?" * len(signal_ids))
+    with _connect() as conn:
+        cur = conn.execute(
+            f"""
+            SELECT id, source, title, url, published_at
+            FROM signals
+            WHERE id IN ({placeholders})
+            """,
+            signal_ids,
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+
+    by_id = {r["id"]: r for r in rows}
+    return [by_id[i] for i in signal_ids if i in by_id]

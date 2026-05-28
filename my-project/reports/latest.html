@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report 2026-05-27T08:41:11.690198+00:00</title>
+<style>
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 880px;
+    margin: 2rem auto;
+    padding: 0 1.5rem 4rem;
+    color: #1f2937;
+    line-height: 1.65;
+}
+
+h1 {
+    font-size: 2rem;
+    border-bottom: 2px solid #e5e7eb;
+    padding-bottom: 0.5rem;
+    color: #111827;
+}
+
+h2 {
+    font-size: 1.4rem;
+    margin-top: 2.5rem;
+    color: #111827;
+    border-bottom: 1px solid #f3f4f6;
+    padding-bottom: 0.3rem;
+}
+
+h3 {
+    font-size: 1.1rem;
+    margin-top: 1.5rem;
+    color: #374151;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1rem 0;
+    font-size: 0.9rem;
+}
+
+th, td {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+th {
+    background: #f9fafb;
+    font-weight: 600;
+    color: #374151;
+}
+
+tr:hover {
+    background: #fafafa;
+}
+
+blockquote {
+    border-left: 4px solid #d1d5db;
+    margin: 1rem 0;
+    padding: 0.5rem 1rem;
+    color: #4b5563;
+    background: #f9fafb;
+    font-style: italic;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 2rem 0;
+}
+
+code {
+    background: #f3f4f6;
+    padding: 0.15rem 0.35rem;
+    border-radius: 3px;
+    font-size: 0.85em;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+}
+
+strong {
+    color: #111827;
+}
+
+em {
+    color: #6b7280;
+}
+
+ul li {
+    margin: 0.25rem 0;
+}
+
+</style>
+</head>
+<body>
+<h1>Signal Intelligence Report</h1>
+<p><strong>Generated:</strong> 2026-05-27 08:41 UTC<br />
+<strong>Report ID:</strong> <code>2026-05-27T08:41:11.690198+00:00</code></p>
+<hr />
+<h2>1. Executive Summary</h2>
+<p>This report covers <strong>100 signals</strong> across <strong>3 topic clusters</strong>, with <strong>12 predictions</strong> generated.</p>
+<p><strong>Top movers right now</strong> (by composite score):</p>
+<ul>
+<li><strong>Google, Openai, Pentagon</strong> (llm) — composite=0.473, size=27</li>
+<li><strong>Microsoft, Arr, Google</strong> (other) — composite=0.429, size=7</li>
+<li><strong>China, Muon, Mirrorcode</strong> (other) — composite=0.384, size=19</li>
+</ul>
+<hr />
+<h2>2. Market Forecast</h2>
+<p>Forecasted cluster sizes at the 30-day horizon, sorted by predicted size.</p>
+<table>
+<thead>
+<tr>
+<th>Topic</th>
+<th>Industry</th>
+<th>Current</th>
+<th>Predicted (30d)</th>
+<th>Confidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Google, Openai, Pentagon</td>
+<td>llm</td>
+<td>27</td>
+<td>27.0</td>
+<td>0.57</td>
+</tr>
+<tr>
+<td>China, Muon, Mirrorcode</td>
+<td>other</td>
+<td>19</td>
+<td>19.3</td>
+<td>0.58</td>
+</tr>
+<tr>
+<td>Microsoft, Arr, Google</td>
+<td>other</td>
+<td>7</td>
+<td>7.3</td>
+<td>0.63</td>
+</tr>
+</tbody>
+</table>
+<p><em>See <code>/forecasts/horizon/{30,90,180,365}</code> for the full set.</em></p>
+<hr />
+<h2>3. Opportunity Report</h2>
+<p>Top clusters ranked by <strong>opportunity_score</strong> (demand × monetization × sentiment).</p>
+<table>
+<thead>
+<tr>
+<th>Topic</th>
+<th>Industry</th>
+<th>Opportunity</th>
+<th>Size</th>
+<th>Trend</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Google, Openai, Pentagon</td>
+<td>llm</td>
+<td>0.367</td>
+<td>27</td>
+<td>0.500</td>
+</tr>
+<tr>
+<td>China, Muon, Mirrorcode</td>
+<td>other</td>
+<td>0.211</td>
+<td>19</td>
+<td>0.500</td>
+</tr>
+<tr>
+<td>Microsoft, Arr, Google</td>
+<td>other</td>
+<td>0.192</td>
+<td>7</td>
+<td>0.500</td>
+</tr>
+</tbody>
+</table>
+<p><em>See <code>docs/scoring.md</code> for the opportunity_score formula.</em></p>
+<hr />
+<h2>4. Topic Heatmap</h2>
+<p>Signal distribution by industry. Higher signal counts and composite scores indicate hotter sectors.</p>
+<table>
+<thead>
+<tr>
+<th>Industry</th>
+<th>Clusters</th>
+<th>Signals</th>
+<th>Avg Composite</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>llm</td>
+<td>1</td>
+<td>27</td>
+<td>0.473</td>
+</tr>
+<tr>
+<td>other</td>
+<td>2</td>
+<td>26</td>
+<td>0.406</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>5. Trend Velocity</h2>
+<p>Topics ranked by <strong>trend_score</strong> (growth velocity vs recent average).</p>
+<table>
+<thead>
+<tr>
+<th>Topic</th>
+<th>Industry</th>
+<th>Trend Score</th>
+<th>Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>China, Muon, Mirrorcode</td>
+<td>other</td>
+<td>0.500</td>
+<td>19</td>
+</tr>
+<tr>
+<td>Google, Openai, Pentagon</td>
+<td>llm</td>
+<td>0.500</td>
+<td>27</td>
+</tr>
+<tr>
+<td>Microsoft, Arr, Google</td>
+<td>other</td>
+<td>0.500</td>
+<td>7</td>
+</tr>
+</tbody>
+</table>
+<p><em>Trend scores require multiple days of cluster history. Day-1 scores will all be 0.500 (neutral).</em></p>
+<hr />
+<h2>6. Market Analysis</h2>
+<p>Cross-source consensus and source distribution.</p>
+<p><strong>Average distinct sources per cluster:</strong> 2.67</p>
+<p><strong>Signals collected per source:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Signals</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>bens_bites</td>
+<td>20</td>
+</tr>
+<tr>
+<td>import_ai</td>
+<td>20</td>
+</tr>
+<tr>
+<td>last_week_in_ai</td>
+<td>20</td>
+</tr>
+<tr>
+<td>latent_space</td>
+<td>20</td>
+</tr>
+<tr>
+<td>tldr_ai</td>
+<td>20</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>7. Weak Signal Report</h2>
+<blockquote>
+<p><strong>Definition:</strong> Clusters with 3-6 signals but at least 3 distinct sources, indicating early but cross-confirmed interest. These are topics that haven't broken out yet but multiple newsletters are independently noticing.</p>
+</blockquote>
+<p><em>No weak signals match the criteria right now. This typically means either (a) the database is small, or (b) all small clusters are single-source.</em></p>
+<hr />
+<h2>8. Contrarian Report</h2>
+<blockquote>
+<p><strong>Definition:</strong> Clusters where the forecasted direction (growth/decline) contradicts the average sentiment of member signals. For example: signals mostly negative but forecast shows growth. Contrarian opportunities or hidden risks.</p>
+</blockquote>
+<p><em>No contrarian signals detected. All cluster forecasts currently align with their member sentiment.</em></p>
+<hr />
+<h2>9. Threat Report</h2>
+<blockquote>
+<p><strong>Definition:</strong> Clusters that are either (a) in the policy/safety industry AND forecast growth (regulatory risk), or (b) any cluster with rapid decline (forecast size &lt; 60% of current) AND average sentiment negative.</p>
+</blockquote>
+<p><em>No threats detected by the current rules.</em></p>
+<hr />
+<h2>10. Recommendations</h2>
+<p>Top predictions ranked by confidence then probability.</p>
+<h3>1. Microsoft, Arr, Google (365d)</h3>
+<p>Microsoft, Arr, Google appears stable through the next 12 months.</p>
+<ul>
+<li><strong>Direction:</strong> stable</li>
+<li><strong>Probability:</strong> 0.50</li>
+<li><strong>Confidence:</strong> 0.63</li>
+<li><strong>Action:</strong> No action required; trend appears steady. (Heuristic suggestion only — not financial or legal advice.)</li>
+</ul>
+<h3>2. Microsoft, Arr, Google (180d)</h3>
+<p>No major change predicted for Microsoft, Arr, Google across the next 6 months.</p>
+<ul>
+<li><strong>Direction:</strong> stable</li>
+<li><strong>Probability:</strong> 0.50</li>
+<li><strong>Confidence:</strong> 0.63</li>
+<li><strong>Action:</strong> No action required; trend appears steady. (Heuristic suggestion only — not financial or legal advice.)</li>
+</ul>
+<h3>3. Microsoft, Arr, Google (90d)</h3>
+<p>Microsoft, Arr, Google appears stable through the next 3 months.</p>
+<ul>
+<li><strong>Direction:</strong> stable</li>
+<li><strong>Probability:</strong> 0.50</li>
+<li><strong>Confidence:</strong> 0.63</li>
+<li><strong>Action:</strong> No action required; trend appears steady. (Heuristic suggestion only — not financial or legal advice.)</li>
+</ul>
+<h3>4. Microsoft, Arr, Google (30d)</h3>
+<p>Steady coverage of Microsoft, Arr, Google is expected over the next 30 days.</p>
+<ul>
+<li><strong>Direction:</strong> stable</li>
+<li><strong>Probability:</strong> 0.50</li>
+<li><strong>Confidence:</strong> 0.63</li>
+<li><strong>Action:</strong> No action required; trend appears steady. (Heuristic suggestion only — not financial or legal advice.)</li>
+</ul>
+<h3>5. China, Muon, Mirrorcode (365d)</h3>
+<p>No major change predicted for China, Muon, Mirrorcode across the next 12 months.</p>
+<ul>
+<li><strong>Direction:</strong> stable</li>
+<li><strong>Probability:</strong> 0.50</li>
+<li><strong>Confidence:</strong> 0.58</li>
+<li><strong>Action:</strong> No action required; trend appears steady. (Heuristic suggestion only — not financial or legal advice.)</li>
+</ul>
+<h3>6. China, Muon, Mirrorcode (180d)</h3>
+<p>China, Muon, Mirrorcode appears stable through the next 6 months.</p>
+<ul>
+<li><strong>Direction:</strong> stable</li>
+<li><strong>Probability:</strong> 0.50</li>
+<li><strong>Confidence:</strong> 0.58</li>
+<li><strong>Action:</strong> No action required; trend appears steady. (Heuristic suggestion only — not financial or legal advice.)</li>
+</ul>
+<h3>7. China, Muon, Mirrorcode (90d)</h3>
+<p>No major change predicted for China, Muon, Mirrorcode across the next 3 months.</p>
+<ul>
+<li><strong>Direction:</strong> stable</li>
+<li><strong>Probability:</strong> 0.50</li>
+<li><strong>Confidence:</strong> 0.58</li>
+<li><strong>Action:</strong> No action required; trend appears steady. (Heuristic suggestion only — not financial or legal advice.)</li>
+</ul>
+<h3>8. China, Muon, Mirrorcode (30d)</h3>
+<p>China, Muon, Mirrorcode appears stable through the next 30 days.</p>
+<ul>
+<li><strong>Direction:</strong> stable</li>
+<li><strong>Probability:</strong> 0.50</li>
+<li><strong>Confidence:</strong> 0.58</li>
+<li><strong>Action:</strong> No action required; trend appears steady. (Heuristic suggestion only — not financial or legal advice.)</li>
+</ul>
+<h3>9. Google, Openai, Pentagon (365d)</h3>
+<p>Steady coverage of Google, Openai, Pentagon is expected over the next 12 months.</p>
+<ul>
+<li><strong>Direction:</strong> stable</li>
+<li><strong>Probability:</strong> 0.50</li>
+<li><strong>Confidence:</strong> 0.57</li>
+<li><strong>Action:</strong> Maintain current LLM positioning and monitor for sudden shifts. (Heuristic suggestion only — not financial or legal advice.)</li>
+</ul>
+<h3>10. Google, Openai, Pentagon (180d)</h3>
+<p>Steady coverage of Google, Openai, Pentagon is expected over the next 6 months.</p>
+<ul>
+<li><strong>Direction:</strong> stable</li>
+<li><strong>Probability:</strong> 0.50</li>
+<li><strong>Confidence:</strong> 0.57</li>
+<li><strong>Action:</strong> Maintain current LLM positioning and monitor for sudden shifts. (Heuristic suggestion only — not financial or legal advice.)</li>
+</ul>
+<hr />
+<p><em>Report generated by First Project orchestrator. See <code>docs/scoring.md</code>, <code>docs/forecasting.md</code>, and <code>docs/predictions.md</code> for methodology.</em></p>
+</body>
+</html>
